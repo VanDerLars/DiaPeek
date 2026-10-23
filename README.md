@@ -35,11 +35,18 @@ Feste, **immer native** Modifier (nicht abfangbar, per Design):
 
 ## Darstellung (in den Optionen wählbar)
 
+- **Sprache** — standardmäßig **automatisch** (System-/Browser-Sprache, über
+  `chrome.i18n.getUILanguage()`; Englisch als Fallback). Alternativ fest
+  Englisch oder Deutsch. Alle Texte sind **lokal** in der Extension gebündelt
+  (`src/i18n.js` und `_locales/`); es wird nichts nachgeladen oder gesendet.
+- **Position** — **Links**, **Mitte** (Standard) oder **Rechts**. Gilt für das
+  Overlay und das Peek-Fenster; der Split bleibt rechts angedockt. Die Größe
+  bleibt wie gehabt groß (`width: min(60vw, 1100px)`, volle Höhe).
 - **Sidepeek** — angedocktes In-Page-Overlay (Standard, mit Split-Option; bettet
   per iframe ein).
-- **Fenster** — jeder Peek öffnet direkt ein eigenes, mittiges Fenster (~70 % der
-  Hauptfenstergröße; schließt beim Rausklicken). Funktioniert auf allen Seiten,
-  auch nicht-einbettbaren.
+- **Fenster** — jeder Peek öffnet direkt ein eigenes Fenster (~70 % der
+  Hauptfenstergröße, an der gewählten Position; schließt beim Rausklicken).
+  Funktioniert auf allen Seiten, auch nicht-einbettbaren.
 
 ## Peek-Overlay (Sidepeek) — Bedienung
 
@@ -78,7 +85,8 @@ Feste, **immer native** Modifier (nicht abfangbar, per Design):
   Viewport-Breite kann ein Content-Script nicht ändern.
 - Seiten mit **COEP/COOP**, **JS-Framebusting** oder Login-/Cookie-Wänden lassen
   sich nicht ins iframe zwingen → automatischer Fallback: **eigenes Peek-Fenster**
-  (echtes Popup, mittig zum Hauptfenster, ~70 % dessen Größe; schließt sich, sobald
+  (echtes Popup, an der gewählten Position – Standard mittig –, ~70 % dessen
+  Größe; schließt sich, sobald
   man aus dem Fenster rausklickt). Manuell auch über den Button im Ladehinweis.
 - `window.open()`-Aufrufe **mit** Fenster-Features (z. B. OAuth-Popups) werden
   bewusst *nicht* abgefangen, um solche Flows nicht zu zerstören.
@@ -88,7 +96,8 @@ Feste, **immer native** Modifier (nicht abfangbar, per Design):
 ## Verworfene Ansätze
 
 - **Popup-Fenster** als wählbarer Render-Modus: entfernt. (Als *Fallback* für
-  nicht einbettbare Seiten kommt es aber zurück — mittig, proportional,
+  nicht einbettbare Seiten kommt es aber zurück — an der gewählten Position,
+  proportional,
   auto-schließend; siehe „Bekannte Grenzen".)
 - **Side Panel** (`chrome.sidePanel`): `open()` verlangt eine User-Geste, die
   beim Weg Link→Content-Script→Background verloren geht; ein anderer nativer Weg

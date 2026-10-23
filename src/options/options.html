@@ -1,61 +1,95 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DiaPeek — Einstellungen</title>
+    <title>DiaPeek — Settings</title>
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <main>
       <h1>DiaPeek</h1>
-      <p class="sub">
-        Öffnet Links, die sonst einen neuen Tab öffnen würden, in einem
-        Peek-Overlay.
+      <p class="sub" data-i18n="subtitle">
+        Opens links that would otherwise open a new tab in a Peek overlay.
       </p>
 
       <label class="toggle">
         <input type="checkbox" id="enabled" checked />
-        <span>DiaPeek aktiviert</span>
+        <span data-i18n="enabled">Enable DiaPeek</span>
       </label>
 
       <section>
-        <h2>Darstellung</h2>
-        <label class="radio">
-          <input type="radio" name="mode" value="overlay" checked />
-          <span><b>Sidepeek</b> — angedocktes In-Page-Overlay (mit Split-Option). Bettet die Seite per iframe ein.</span>
-        </label>
-        <label class="radio">
-          <input type="radio" name="mode" value="window" />
-          <span><b>Fenster</b> — eigenes, mittiges Fenster. Funktioniert auf allen Seiten (auch nicht-einbettbaren) und schließt beim Rausklicken.</span>
-        </label>
+        <h2 data-i18n="general">General</h2>
+        <div class="row">
+          <label for="language" data-i18n="languageLabel">Language</label>
+          <select id="language">
+            <option value="auto" selected data-i18n="languageAuto">Automatic (system)</option>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+          </select>
+        </div>
+        <p class="note" data-i18n="languageNote">
+          Follows the system/browser language by default. You can also pick a
+          language explicitly.
+        </p>
       </section>
 
       <section>
-        <h2>Was im Peek öffnen?</h2>
+        <h2 data-i18n="appearance">Appearance</h2>
+        <label class="radio">
+          <input type="radio" name="mode" value="overlay" checked />
+          <span>
+            <b data-i18n="modeOverlayTitle">Sidepeek</b> —
+            <span data-i18n="modeOverlayDesc">Docked in-page overlay (with split option). Embeds the page in an iframe.</span>
+          </span>
+        </label>
+        <label class="radio">
+          <input type="radio" name="mode" value="window" />
+          <span>
+            <b data-i18n="modeWindowTitle">Window</b> —
+            <span data-i18n="modeWindowDesc">Dedicated window. Works on every page (even non-embeddable ones) and closes when you click away.</span>
+          </span>
+        </label>
+
+        <div class="row position-row">
+          <label for="position" data-i18n="positionLabel">Position</label>
+          <select id="position">
+            <option value="left" data-i18n="posLeft">Left</option>
+            <option value="center" selected data-i18n="posCenter">Center</option>
+            <option value="right" data-i18n="posRight">Right</option>
+          </select>
+        </div>
+        <p class="note" data-i18n="positionNote">
+          Where the Peek overlay or window appears. Center is the default.
+        </p>
+      </section>
+
+      <section>
+        <h2 data-i18n="interceptHeading">What opens in a Peek?</h2>
         <label class="check">
           <input type="checkbox" id="ic-newtab" checked />
           <span>
-            Links, die einen neuen Tab öffnen
-            <em class="hint">(<code>target="_blank"</code>, <code>window.open</code>, Mittelklick)</em>
+            <span data-i18n="interceptNewTab">Links that open a new tab</span>
+            <em class="hint" data-i18n="interceptNewTabHint">(target="_blank", window.open, middle-click)</em>
           </span>
         </label>
         <label class="check">
           <input type="checkbox" id="ic-shift" checked />
-          <span>⇧ Shift + Klick</span>
+          <span data-i18n="interceptShift">⇧ Shift + click</span>
         </label>
-        <p class="note">
-          ⌘ Cmd (neuer Tab), ⌃ Ctrl (Kontextmenü) und ⌥ Option (nativer Split)
-          bleiben immer nativ und werden nicht abgefangen.
+        <p class="note" data-i18n="interceptNote">
+          ⌘ Cmd (new tab), ⌃ Ctrl (context menu) and ⌥ Option (native split) always
+          stay native and are never intercepted.
         </p>
       </section>
 
       <div class="footer">
-        <button id="save">Speichern</button>
-        <button id="reset" class="secondary">Standard wiederherstellen</button>
+        <button id="save" data-i18n="save">Save</button>
+        <button id="reset" class="secondary" data-i18n="reset">Restore defaults</button>
         <span id="status"></span>
       </div>
     </main>
+    <script src="../i18n.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

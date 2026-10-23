@@ -15,6 +15,8 @@
 
   const DEFAULTS = {
     enabled: true,
+    position: 'center', // 'left' | 'center' | 'right'
+    language: 'auto', // 'auto' (system/browser) | 'en' | 'de'
     intercept: {
       newTabLinks: true,
       shiftClick: true,
@@ -23,6 +25,25 @@
 
   let settings = DEFAULTS;
   let inPeekWindow = false; // true, wenn diese Seite im eigenen Peek-Fenster läuft
+
+  // Alte 9er-Werte (top-left …) werden auf left/center/right migriert.
+  function normalizePosition(pos) {
+    if (globalThis.DiaPeekI18N) return globalThis.DiaPeekI18N.normalizePosition(pos);
+    const v = String(pos || '');
+    if (v === 'left' || /-left$/.test(v)) return 'left';
+    if (v === 'right' || /-right$/.test(v)) return 'right';
+    return 'center';
+  }
+
+  function positionClass(pos) {
+    return 'pos-' + normalizePosition(pos);
+  }
+
+  // Alle UI-Texte kommen aus src/i18n.js (lokal gebündelt, kein Netzwerk).
+  function tr(key) {
+    const i18n = globalThis.DiaPeekI18N;
+    return i18n ? i18n.t(key, settings.language) : key;
+  }
 
   function mergeSettings(s) {
     s = s || {};
@@ -44,12 +65,22 @@
 
   async function loadSettings() {
     try {
-      const s = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
-      if (s) settings = mergeSettings(s);
+      // Direkt aus chrome.storage lesen statt den Service Worker pro Frame
+      // aufzuwecken. Das ist beim Seitenaufbau deutlich schneller – besonders
+      // auf Seiten mit vielen iframes (content-iso läuft in allen Frames).
+      let stored;
+      if (chrome.storage && chrome.storage.sync) {
+        ({ settings: stored } = await chrome.storage.sync.get('settings'));
+      } else {
+        stored = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+      }
+      settings = mergeSettings(stored);
     } catch (e) {
       settings = DEFAULTS;
     }
     pushConfigToMain();
+    // Sprachwechsel bei bereits geöffnetem Peek-Fenster sofort übernehmen.
+    if (isTop && inPeekWindow) renderWindowChrome();
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -82,6 +113,24 @@
     } catch (e) {
       return false;
     }
+  }
+
+  // iframe-Sandbox: Cross-origin-Inhalte bekommen die Sandbox (u. a. Schutz vor
+  // Top-Navigation/Framebusting). Bei GLEICHER Origin (z. B. Reddit-Link auf
+  // Reddit) wäre `allow-scripts + allow-same-origin` wirkungslos – das Frame
+  // könnte seine Sandbox selbst entfernen – und Chrome loggt dafür eine Warnung
+  // ("can escape its sandboxing"). Deshalb dort bewusst KEINE Sandbox: Der
+  // Inhalt teilt ohnehin die Origin der Host-Seite.
+  const IFRAME_SANDBOX =
+    'allow-scripts allow-forms allow-same-origin allow-popups allow-modals allow-downloads allow-popups-to-escape-sandbox';
+
+  function sandboxFor(url) {
+    try {
+      if (new URL(url, location.href).origin === location.origin) return null;
+    } catch (e) {
+      /* bei ungültiger URL Standard-Sandbox verwenden */
+    }
+    return IFRAME_SANDBOX;
   }
   function findAnchor(e) {
     const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
@@ -156,9 +205,17 @@
   const OVERLAY_CSS = `
     :host { all: initial; }
     .backdrop { position: fixed; inset: 0; background: rgba(20,20,28,.38); animation: fade .12s ease-out; }
+    .stage {
+      position: fixed; inset: 0; display: flex; padding: 12px;
+      align-items: stretch; pointer-events: none;
+    }
+    .stage.pos-left { justify-content: flex-start; }
+    .stage.pos-center { justify-content: center; }
+    .stage.pos-right { justify-content: flex-end; }
     .peek {
-      position: fixed; top: 12px; right: 12px; bottom: 12px;
-      width: min(60vw, 1100px); min-width: 380px;
+      box-sizing: border-box;
+      width: min(60vw, 1100px); min-width: min(380px, calc(100vw - 24px));
+      height: 100%; max-height: calc(100vh - 24px);
       background: #fff; border-radius: 12px; overflow: hidden;
       border: 1px solid rgba(0,0,0,.14);
       box-shadow: 0 24px 70px rgba(0,0,0,.40);
@@ -166,8 +223,11 @@
       animation: pop .18s cubic-bezier(.2, .8, .2, 1); transform-origin: center;
       pointer-events: auto;
     }
-    .peek.split {
-      top: 0; right: 0; bottom: 0; width: 46vw;
+    /* Split: randlos rechts angedockt, die Positionseinstellung wird dabei
+       bewusst ignoriert. */
+    .stage.split { padding: 0; justify-content: flex-end; }
+    .stage.split .peek {
+      width: 46vw; height: 100%; max-height: none; min-width: 0;
       border: 0; border-left: 1px solid rgba(0,0,0,.16);
       border-radius: 0; box-shadow: none;
     }
@@ -203,7 +263,7 @@
     @media (prefers-reduced-motion: reduce) { .peek, .backdrop { animation: none; } }
     @media (prefers-color-scheme: dark) {
       .peek { background: #1e1e20; border-color: rgba(255,255,255,.12); }
-      .peek.split { border-left-color: rgba(255,255,255,.12); }
+      .stage.split .peek { border-left-color: rgba(255,255,255,.12); }
       .bar { background: #2b2b2d; border-bottom-color: rgba(255,255,255,.09); }
       .addr { color: #b0b0b6; }
       .actbtn { color: #d8d8dc; }
@@ -239,7 +299,8 @@
     const root = host.shadowRoot;
     const backdrop = root.querySelector('.backdrop');
     if (backdrop) backdrop.style.display = 'none';
-    root.querySelector('.peek').classList.add('split');
+    const stage = root.querySelector('.stage');
+    if (stage) stage.classList.add('split');
     const btn = root.querySelector('[data-act="split"]');
     if (btn) btn.setAttribute('aria-pressed', 'true');
     host.style.pointerEvents = 'none';
@@ -258,7 +319,8 @@
     const root = host.shadowRoot;
     const backdrop = root.querySelector('.backdrop');
     if (backdrop) backdrop.style.display = '';
-    root.querySelector('.peek').classList.remove('split');
+    const stage = root.querySelector('.stage');
+    if (stage) stage.classList.remove('split');
     const btn = root.querySelector('[data-act="split"]');
     if (btn) btn.setAttribute('aria-pressed', 'false');
     host.style.pointerEvents = '';
@@ -305,32 +367,44 @@
     root.innerHTML = `
       <style>${OVERLAY_CSS}</style>
       <div class="backdrop"></div>
-      <div class="peek">
-        <div class="bar">
-          <div class="addr"></div>
-          <div class="actions">
-            <button class="actbtn" data-act="split" aria-pressed="false" title="Als Split anzeigen (Seite bleibt links bedienbar)">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2"/><line x1="9.75" y1="2.75" x2="9.75" y2="13.25"/></svg>
-            </button>
-            <button class="actbtn" data-act="tab" title="In neuem Tab öffnen">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.25H4.25A1.25 1.25 0 0 0 3 4.5v7.25A1.25 1.25 0 0 0 4.25 13h7.25A1.25 1.25 0 0 0 12.75 11.75V9"/><path d="M9.5 2.75h3.75V6.5"/><path d="M13.25 2.75 7.25 8.75"/></svg>
-            </button>
-            <button class="actbtn close" data-act="close" title="Peek schließen (Esc)">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
-            </button>
+      <div class="stage ${positionClass(settings.position)}">
+        <div class="peek">
+          <div class="bar">
+            <div class="addr"></div>
+            <div class="actions">
+              <button class="actbtn" data-act="split" aria-pressed="false">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2"/><line x1="9.75" y1="2.75" x2="9.75" y2="13.25"/></svg>
+              </button>
+              <button class="actbtn" data-act="tab">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.25H4.25A1.25 1.25 0 0 0 3 4.5v7.25A1.25 1.25 0 0 0 4.25 13h7.25A1.25 1.25 0 0 0 12.75 11.75V9"/><path d="M9.5 2.75h3.75V6.5"/><path d="M13.25 2.75 7.25 8.75"/></svg>
+              </button>
+              <button class="actbtn close" data-act="close">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+              </button>
+            </div>
           </div>
-        </div>
-        <div class="body">
-          <div class="loader">
-            <div class="loader-msg">Lädt …</div>
-            <button class="loader-fallback" style="display:none" data-act="window">In eigenem Fenster öffnen</button>
+          <div class="body">
+            <div class="loader">
+              <div class="loader-msg"></div>
+              <button class="loader-fallback" style="display:none" data-act="window"></button>
+            </div>
+            <iframe class="frame"
+              referrerpolicy="no-referrer-when-downgrade"></iframe>
           </div>
-          <iframe class="frame"
-            sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals allow-downloads allow-popups-to-escape-sandbox"
-            referrerpolicy="no-referrer-when-downgrade"></iframe>
         </div>
       </div>`;
     document.documentElement.appendChild(host);
+
+    // Tooltips/Beschriftungen in der gewählten Sprache setzen.
+    const splitBtn = root.querySelector('[data-act="split"]');
+    const tabBtn = root.querySelector('[data-act="tab"]');
+    const closeBtn = root.querySelector('[data-act="close"]');
+    splitBtn.title = tr('overlaySplit');
+    splitBtn.setAttribute('aria-label', tr('overlaySplit'));
+    tabBtn.title = tr('overlayTab');
+    tabBtn.setAttribute('aria-label', tr('overlayTab'));
+    closeBtn.title = tr('overlayClose');
+    closeBtn.setAttribute('aria-label', tr('overlayClose'));
 
     // URL/Host in die Kopfleiste (wie eine native Adressleiste).
     const addr = root.querySelector('.addr');
@@ -346,6 +420,11 @@
     const loader = root.querySelector('.loader');
     const loaderMsg = root.querySelector('.loader-msg');
     const fallbackBtn = root.querySelector('.loader-fallback');
+    loaderMsg.textContent = tr('overlayLoading');
+    fallbackBtn.textContent = tr('overlayOpenWindow');
+    // Sandbox muss vor dem Setzen von src gesetzt sein.
+    const sandbox = sandboxFor(url);
+    if (sandbox) frame.setAttribute('sandbox', sandbox);
     let loaded = false;
 
     frame.addEventListener('load', () => {
@@ -363,7 +442,7 @@
     overlayTimers.push(
       setTimeout(() => {
         if (!loaded) {
-          loaderMsg.textContent = 'Seite blockiert das Einbetten – öffne in eigenem Fenster …';
+          loaderMsg.textContent = tr('overlayBlocked');
           fallbackBtn.style.display = '';
         }
       }, 3000)
@@ -400,7 +479,8 @@
 
   // ---- Steuerleiste im eigenen Peek-Fenster -------------------------------
   function renderWindowChrome() {
-    if (document.getElementById('diapeek-winbar')) return;
+    // Neu rendern, damit ein Sprachwechsel auch bei offenem Fenster greift.
+    document.getElementById('diapeek-winbar')?.remove();
     const host = document.createElement('div');
     host.id = 'diapeek-winbar';
     host.style.cssText = 'all:initial; position:fixed; top:10px; right:10px; z-index:2147483647;';
@@ -414,18 +494,24 @@
         svg { width:16px; height:16px; display:block; pointer-events:none; }
       </style>
       <div class="bar">
-        <button class="b" data-act="promote" title="Als Tab in der Tab-Gruppe öffnen">
+        <button class="b" data-act="promote">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.25H4.25A1.25 1.25 0 0 0 3 4.5v7.25A1.25 1.25 0 0 0 4.25 13h7.25A1.25 1.25 0 0 0 12.75 11.75V9"/><path d="M9.5 2.75h3.75V6.5"/><path d="M13.25 2.75 7.25 8.75"/></svg>
         </button>
-        <button class="b close" data-act="close" title="Fenster schließen">
+        <button class="b close" data-act="close">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
         </button>
       </div>`;
     (document.body || document.documentElement).appendChild(host);
-    root.querySelector('[data-act="promote"]').addEventListener('click', () => {
+    const promoteBtn = root.querySelector('[data-act="promote"]');
+    const closeBtn = root.querySelector('[data-act="close"]');
+    promoteBtn.title = tr('winPromote');
+    promoteBtn.setAttribute('aria-label', tr('winPromote'));
+    closeBtn.title = tr('winClose');
+    closeBtn.setAttribute('aria-label', tr('winClose'));
+    promoteBtn.addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'PROMOTE_PEEK_WINDOW', url: location.href });
     });
-    root.querySelector('[data-act="close"]').addEventListener('click', () => {
+    closeBtn.addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'CLOSE_PEEK_WINDOW' });
     });
   }

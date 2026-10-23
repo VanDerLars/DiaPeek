@@ -6,6 +6,8 @@
 const DEFAULTS = {
   enabled: true,
   mode: 'overlay', // 'overlay' (Sidepeek/In-Page) | 'window' (eigenes Fenster)
+  position: 'center', // 'left' | 'center' | 'right'
+  language: 'auto', // 'auto' (System/Browser) | 'en' | 'de'
   intercept: {
     newTabLinks: true, // target="_blank", window.open (feature-los), Mittelklick
     shiftClick: true, // Shift + Klick
@@ -21,10 +23,20 @@ function mergeSettings(stored) {
   };
 }
 
+let cachedSettings = null;
+
 async function getSettings() {
+  // Im Service Worker cachen: spart einen Storage-Read pro Peek. Bei Änderungen
+  // (siehe Listener unten) wird der Cache verworfen.
+  if (cachedSettings) return cachedSettings;
   const { settings } = await chrome.storage.sync.get('settings');
-  return mergeSettings(settings);
+  cachedSettings = mergeSettings(settings);
+  return cachedSettings;
 }
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && changes.settings) cachedSettings = null;
+});
 
 // ---- declarativeNetRequest: Framing-Header entfernen -----------------------
 // WICHTIG: Die Regel ist NUR aktiv, solange ein Peek offen ist, und NUR für die
@@ -32,6 +44,7 @@ async function getSettings() {
 // ALLEN Seiten — das brach z. B. das Anzeigen von Bildern in Slack. Jetzt bleibt
 // der Normalbetrieb fremder Seiten unberührt.
 const DNR_RULE_ID = 1001;
+let stripHost = null; // aktuell gestrippte Domain (spart unnötige Rule-Updates)
 
 async function setStripRule(url) {
   let host = null;
@@ -40,6 +53,8 @@ async function setStripRule(url) {
   } catch (e) {
     /* ungültige URL → keine Regel */
   }
+  // Gleiche Domain wie beim offenen Peek → Regel ist bereits aktiv.
+  if (host && host === stripHost) return;
   const addRules = host
     ? [
         {
@@ -64,6 +79,7 @@ async function setStripRule(url) {
       removeRuleIds: [DNR_RULE_ID],
       addRules,
     });
+    stripHost = host;
   } catch (e) {
     console.warn('[DiaPeek] DNR set-Fehler:', e);
   }
@@ -75,6 +91,7 @@ async function clearStripRule() {
   } catch (e) {
     console.warn('[DiaPeek] DNR clear-Fehler:', e);
   }
+  stripHost = null;
 }
 
 // Beim Start/Reload alte Session-Regeln sicher entfernen.
@@ -119,12 +136,44 @@ async function createTabInGroup(url, opener) {
 }
 
 // ---- Peek-Fenster (Fallback für nicht einbettbare Seiten) ------------------
-// Ein echtes Popup-Fenster (keine iframe-/CSP-Grenzen), mittig zum Hauptfenster,
-// proportional zur Hauptfenstergröße, und schließt automatisch, sobald der Fokus
-// auf ein anderes Fenster wechselt ("aus dem Fenster rausklicken").
+// Ein echtes Popup-Fenster (keine iframe-/CSP-Grenzen), proportional zur
+// Hauptfenstergröße, an der in den Einstellungen gewählten Position (Standard:
+// mittig), und schließt automatisch, sobald der Fokus auf ein anderes Fenster
+// wechselt ("aus dem Fenster rausklicken").
 let peekWindowId = null;
 let peekOpener = null; // Kontext des Quell-Tabs (für "als Tab in Gruppe öffnen")
 const PEEK_WINDOW_RATIO = 0.7;
+
+const POSITION_VALUES = new Set(['left', 'center', 'right']);
+
+// Alte 9er-Werte (top-left …) werden auf left/center/right migriert.
+function normalizePosition(position) {
+  const v = String(position || '');
+  if (v === 'left' || /-left$/.test(v)) return 'left';
+  if (v === 'right' || /-right$/.test(v)) return 'right';
+  return 'center';
+}
+
+// Position des Peek-Fensters innerhalb des aktuellen Browserfensters.
+// Standard ist "center" (mittig). Die gleiche Einstellung steuert auch die
+// Position des In-Page-Overlays (siehe content-iso.js).
+function windowPosition(position, win, width, height) {
+  const pos = POSITION_VALUES.has(position) ? position : normalizePosition(position);
+  const W = win.width || 1200;
+  const H = win.height || 900;
+  const baseLeft = Number.isFinite(win.left) ? win.left : 0;
+  const baseTop = Number.isFinite(win.top) ? win.top : 0;
+
+  let left;
+  if (pos === 'left') left = baseLeft;
+  else if (pos === 'right') left = baseLeft + W - width;
+  else left = baseLeft + (W - width) / 2;
+
+  // Vertikal immer mittig – die Einstellung betrifft nur links/mitte/rechts.
+  const top = baseTop + (H - height) / 2;
+
+  return { left: Math.round(left), top: Math.round(top) };
+}
 
 chrome.windows.onRemoved.addListener((id) => {
   if (id === peekWindowId) {
@@ -145,7 +194,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
   }
 });
 
-async function openPeekWindow(url, opener) {
+async function openPeekWindow(url, opener, position) {
   if (opener) peekOpener = opener;
   let width = 900;
   let height = 700;
@@ -157,8 +206,14 @@ async function openPeekWindow(url, opener) {
     const H = win.height || 900;
     width = Math.round(W * PEEK_WINDOW_RATIO);
     height = Math.round(H * PEEK_WINDOW_RATIO);
-    left = Math.round((win.left || 0) + (W - width) / 2);
-    top = Math.round((win.top || 0) + (H - height) / 2);
+    if (!position) {
+      try {
+        position = (await getSettings()).position;
+      } catch (e) {
+        position = 'center';
+      }
+    }
+    ({ left, top } = windowPosition(position, win, width, height));
   } catch (e) {
     /* Standardgröße/-position durch den Browser */
   }
@@ -256,7 +311,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       // Modus "Fenster": direkt eigenes Fenster öffnen (kein iframe/DNR nötig).
       if (s.mode === 'window') {
-        await openPeekWindow(msg.url, sender.tab);
+        await openPeekWindow(msg.url, sender.tab, s.position);
         sendResponse({ ok: true, handled: 'window' });
         return;
       }

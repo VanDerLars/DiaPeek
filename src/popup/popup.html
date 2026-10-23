@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <style>
@@ -15,11 +15,12 @@
   <body>
     <h1>DiaPeek</h1>
     <div class="row">
-      <label><input type="checkbox" id="enabled" checked /> Aktiviert</label>
+      <label><input type="checkbox" id="enabled" checked /> <span data-i18n="popupEnabled">Enabled</span></label>
     </div>
     <div class="row">
-      <a id="opts">Einstellungen …</a>
+      <a id="opts" data-i18n="popupSettings">Settings…</a>
     </div>
+    <script src="../i18n.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

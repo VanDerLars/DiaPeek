@@ -100,8 +100,11 @@ Getestet am 2026-07-01 in der angebundenen Dia-Instanz (Chromium 149, kein
   gescoped auf Sub-Frames, oder (sicherer) dynamisch pro Peek nur für die
   Ziel-URL, danach wieder entfernt.
 - **Framebusting-Schutz:** iframe mit `sandbox` **ohne** `allow-top-navigation`
-  (aber mit `allow-scripts allow-forms allow-same-origin allow-popups`), damit
-  `top.location = …`-Ausbrüche die Hauptseite nicht kapern.
+  (aber mit `allow-scripts allow-forms allow-same-origin allow-popups`) für
+  **cross-origin** Ziele, damit `top.location = …`-Ausbrüche die Hauptseite
+  nicht kapern. Bei **gleicher Origin** (z. B. Reddit → Reddit) wird bewusst
+  keine Sandbox gesetzt: `allow-scripts + allow-same-origin` ließe das Frame
+  seine Sandbox selbst entfernen (Chrome-Warnung) und böte keinen echten Schutz.
 - **Fallback:** Seiten, die trotz Header-Stripping nicht einbettbar sind (COEP/COOP,
   JS-Framebusting) → automatisch auf **Popup-Fenster** (Variante B) ausweichen.
 - Deckt ~95 % der Seiten ab, beste Optik, höchster Aufwand.

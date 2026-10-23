@@ -1,0 +1,5 @@
+{
+  "extDescription": {
+    "message": "Opens links that would otherwise open a new tab in a Peek (in-page overlay or its own window)."
+  }
+}

@@ -24,6 +24,12 @@ section {
 .check.inline { padding: 0; }
 .row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
 .row label { display: flex; align-items: center; gap: 6px; }
+.position-row { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(128,128,128,.15); }
+.position-row label { font-weight: 600; }
+select {
+  padding: 6px 10px; border: 1px solid #ccc; border-radius: 7px;
+  font: inherit; background: #fff; color: inherit; cursor: pointer;
+}
 input[type="number"] { width: 80px; padding: 5px 7px; border: 1px solid #ccc; border-radius: 7px; font: inherit; }
 code { background: rgba(128,128,128,.18); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
 .hint { color: #888; font-style: normal; font-size: 12px; }
@@ -48,6 +54,7 @@ button#reset:hover { background: rgba(0,122,255,.08); }
   .note { color: #98989d; }
   code { background: rgba(255,255,255,.16); color: #f2f2f7; }
   input[type="number"] { background: #3a3a3c; color: #fff; border-color: #555; }
+  select { background: #3a3a3c; color: #fff; border-color: #555; }
   .footer { background: #1c1c1e; }
   button#save { background: #0a84ff; }
 }

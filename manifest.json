@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
+  "default_locale": "en",
   "name": "DiaPeek",
-  "version": "1.0.0",
-  "description": "Öffnet Links, die sonst einen neuen Tab öffnen würden, in einem Peek (Sidepeek-Overlay oder eigenem Fenster).",
+  "version": "1.2.1",
+  "description": "__MSG_extDescription__",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -43,7 +44,7 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["src/content-iso.js"],
+      "js": ["src/i18n.js", "src/content-iso.js"],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true,
